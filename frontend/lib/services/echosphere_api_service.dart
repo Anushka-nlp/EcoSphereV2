@@ -1,0 +1,424 @@
+import 'dart:io';
+
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+
+class EchosphereApiService {
+  static final EchosphereApiService _instance = EchosphereApiService._internal();
+  factory EchosphereApiService() => _instance;
+
+  late Dio _dio;
+  late String _baseUrl;
+  String? _authToken;
+
+  EchosphereApiService._internal() {
+    if (kIsWeb) {
+      _baseUrl = 'http://localhost:8000/api/v1';
+    } else if (!kIsWeb && Platform.isAndroid) {
+      _baseUrl = 'http://10.0.2.2:8000/api/v1';
+    } else {
+      _baseUrl = 'http://127.0.0.1:8000/api/v1';
+    }
+
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: _baseUrl,
+        connectTimeout: const Duration(seconds: 2),
+        receiveTimeout: const Duration(seconds: 3),
+        headers: {'Content-Type': 'application/json'},
+      ),
+    );
+
+
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (_authToken != null && _authToken!.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $_authToken';
+          }
+          return handler.next(options);
+        },
+        onError: (DioException error, handler) {
+          debugPrint('API Error [${error.response?.statusCode}]: ${error.response?.data}');
+          return handler.next(error);
+        },
+      ),
+    );
+  }
+
+  void setBaseUrl(String url) {
+    _baseUrl = url;
+    _dio.options.baseUrl = url;
+  }
+
+  void setAuthToken(String? token) {
+    _authToken = token;
+  }
+
+  // --- Auth Endpoints ---
+  Future<Map<String, dynamic>> login({
+    required String identifier,
+    required String password,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/auth/login',
+        data: {
+          'identifier': identifier,
+          'password': password,
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      final msg = e.response?.data?['detail'] ?? 'Login failed. Please check credentials.';
+      throw Exception(msg);
+    }
+  }
+
+  Future<Map<String, dynamic>> getCurrentUser() async {
+    try {
+      final response = await _dio.get('/auth/me');
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to fetch user profile.');
+    }
+  }
+
+  // --- Announcements Endpoints ---
+  Future<List<dynamic>> getAnnouncements({String? status, int? categoryId}) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (status != null) queryParams['status'] = status;
+      if (categoryId != null) queryParams['category_id'] = categoryId;
+
+      final response = await _dio.get(
+        '/announcements/',
+        queryParameters: queryParams,
+      );
+      return response.data as List<dynamic>;
+    } on DioException catch (e) {
+      debugPrint('Error fetching announcements: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> getAnnouncementById(int id) async {
+    final response = await _dio.get('/announcements/$id');
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createAnnouncement({
+    required String title,
+    required String description,
+    required int categoryId,
+    String priority = 'NORMAL',
+    String emergencyLevel = 'NORMAL',
+    String? scheduledAt,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/announcements',
+        data: {
+          'title': title,
+          'description': description,
+          'category_id': categoryId,
+          'priority': priority,
+          'emergency_level': emergencyLevel,
+          if (scheduledAt != null) 'scheduled_at': scheduledAt,
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to create announcement.');
+    }
+  }
+
+  Future<Map<String, dynamic>> updateAnnouncement(
+    int id, {
+    String? title,
+    String? description,
+    int? categoryId,
+    String? priority,
+    String? emergencyLevel,
+    String? status,
+  }) async {
+    try {
+      final response = await _dio.put(
+        '/announcements/$id',
+        data: {
+          if (title != null) 'title': title,
+          if (description != null) 'description': description,
+          if (categoryId != null) 'category_id': categoryId,
+          if (priority != null) 'priority': priority,
+          if (emergencyLevel != null) 'emergency_level': emergencyLevel,
+          if (status != null) 'status': status,
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to update announcement.');
+    }
+  }
+
+  Future<Map<String, dynamic>> approveAnnouncement(int id, {String? remarks}) async {
+    try {
+      final response = await _dio.post(
+        '/announcements/$id/approve',
+        data: {'remarks': remarks ?? 'Approved'},
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to approve announcement.');
+    }
+  }
+
+  Future<Map<String, dynamic>> rejectAnnouncement(int id, {required String remarks}) async {
+    try {
+      final response = await _dio.post(
+        '/announcements/$id/reject',
+        data: {'remarks': remarks},
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to reject announcement.');
+    }
+  }
+
+  Future<Map<String, dynamic>> publishAnnouncement(int id) async {
+    try {
+      final response = await _dio.post('/announcements/$id/publish');
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to publish announcement.');
+    }
+  }
+
+  Future<void> deleteAnnouncement(int id) async {
+    try {
+      await _dio.delete('/announcements/$id');
+    } on DioException catch (e) {
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to delete announcement.');
+    }
+  }
+
+  // --- Audit Logs ---
+  Future<List<dynamic>> getAuditLogs() async {
+    try {
+      final response = await _dio.get('/audit-logs/');
+      return response.data as List<dynamic>;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // --- AI Endpoints ---
+  Future<Map<String, dynamic>> sendAiChat(
+    String prompt, {
+    String? userRole,
+    String? department,
+    String? fullName,
+    String? usnOrEmpId,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/ai/chat',
+        data: {
+          'prompt': prompt,
+          'user_role': userRole ?? 'STUDENT',
+          'department': department,
+          'full_name': fullName,
+          'usn_or_emp_id': usnOrEmpId,
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('AI Chat API Error: $e');
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to process AI request.');
+    }
+  }
+
+  Future<Map<String, dynamic>> generateAiDraft(String topic, {String? category, String? targetRole, String? department}) async {
+    try {
+      final response = await _dio.post(
+        '/ai/draft',
+        data: {
+          'topic': topic,
+          'category': category ?? 'Academics',
+          'target_role': targetRole ?? 'STUDENT',
+          'department': department,
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('AI Draft API Error: $e');
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to generate draft.');
+    }
+  }
+
+  Future<Map<String, dynamic>> expandText(String text, {String? category}) async {
+    try {
+      final response = await _dio.post(
+        '/ai/expand',
+        data: {
+          'text': text,
+          'category': category ?? 'Academics',
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('AI Expand API Error: $e');
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to expand text.');
+    }
+  }
+
+  Future<Map<String, dynamic>> grammarCheck(String text) async {
+    try {
+      final response = await _dio.post(
+        '/ai/grammar',
+        data: {'text': text},
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('AI Grammar API Error: $e');
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to check grammar.');
+    }
+  }
+
+  Future<Map<String, dynamic>> validateContent(String text, {String? title}) async {
+    try {
+      final response = await _dio.post(
+        '/ai/validate',
+        data: {
+          'title': title ?? '',
+          'text': text,
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('AI Validate API Error: $e');
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to validate content.');
+    }
+  }
+
+  Future<Map<String, dynamic>> checkSpam(String text) async {
+    try {
+      final response = await _dio.post(
+        '/ai/spam',
+        data: {'text': text},
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('AI Spam API Error: $e');
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to check spam.');
+    }
+  }
+
+  Future<Map<String, dynamic>> checkDuplicate(String newTitle, String newText, {String? department}) async {
+    try {
+      final response = await _dio.post(
+        '/ai/duplicate',
+        data: {
+          'new_title': newTitle,
+          'new_text': newText,
+          'department': department,
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('AI Duplicate API Error: $e');
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to check duplicate.');
+    }
+  }
+
+  Future<Map<String, dynamic>> getAiPriorityRecommendation(String title, String content, {String? userRole}) async {
+    try {
+      final response = await _dio.post(
+        '/ai/priority',
+        data: {
+          'title': title,
+          'content': content,
+          'user_role': userRole ?? 'STUDENT',
+        },
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      debugPrint('AI Priority API Error: $e');
+      throw Exception(e.response?.data?['detail'] ?? 'Failed to get priority recommendation.');
+    }
+  }
+
+  Future<String> summarizeContent(String content) async {
+    try {
+      final response = await _dio.post(
+        '/ai/summarize',
+        data: {'content': content},
+      );
+      return response.data['summary'] as String;
+    } on DioException catch (_) {
+      return content.length > 80 ? '${content.substring(0, 80)}...' : content;
+    }
+  }
+
+  // --- Notifications Endpoints ---
+  Future<List<dynamic>> getNotifications() async {
+    try {
+      final response = await _dio.get('/notifications/');
+      return response.data as List<dynamic>;
+    } catch (e) {
+      debugPrint('Error fetching notifications: $e');
+      return [];
+    }
+  }
+
+  Future<void> markNotificationRead(int notificationId) async {
+    try {
+      await _dio.put('/notifications/$notificationId/read');
+    } catch (e) {
+      debugPrint('Error marking notification read: $e');
+    }
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    try {
+      await _dio.put('/notifications/read-all');
+    } catch (e) {
+      debugPrint('Error marking all notifications read: $e');
+    }
+  }
+
+  // --- User Management Endpoints ---
+  Future<List<dynamic>> getUsers({int? departmentId}) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (departmentId != null) queryParams['department_id'] = departmentId;
+
+      final response = await _dio.get('/users/', queryParameters: queryParams);
+      return response.data as List<dynamic>;
+    } catch (e) {
+      debugPrint('Error fetching users: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> getUserDetail(int userId) async {
+    final response = await _dio.get('/users/$userId');
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateUserRole(
+    int userId, {
+    int? roleId,
+    int? departmentId,
+    bool? isActive,
+  }) async {
+    final response = await _dio.put(
+      '/users/$userId',
+      data: {
+        if (roleId != null) 'role_id': roleId,
+        if (departmentId != null) 'department_id': departmentId,
+        if (isActive != null) 'is_active': isActive,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+}

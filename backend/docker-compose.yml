@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: echosphere_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: echosphere_db
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: .
+    container_name: echosphere_backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@db:5432/echosphere_db
+      JWT_SECRET: echosphere_super_secret_jwt_key_2026
+    depends_on:
+      - db

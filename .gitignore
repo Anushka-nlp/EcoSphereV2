@@ -1,0 +1,29 @@
+# Environment & IDE
+.env
+.vscode/
+.idea/
+*.swp
+*.tmp
+
+# Python & Virtualenv
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.sqlite3
+
+# Flutter & Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+frontend/build/
+frontend/.dart_tool/
+frontend/android/.gradle/
+frontend/android/app/build/
+
+# Media & Temp
+*.mp4
+*.zip
+.tempmediaStorage/
